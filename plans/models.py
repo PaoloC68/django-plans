@@ -24,11 +24,11 @@ from plans.locale.eu.taxation import EUTaxationPolicy
 
 accounts_logger = logging.getLogger('accounts')
 
-if 'django.contrib.auth' in settings.INSTALLED_APPS:
-    if hasattr(settings, 'AUTH_USER_MODEL'):
-        User = settings.AUTH_USER_MODEL
-    else:
-        from django.contrib.auth.models import User
+try:
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+except ImportError:
+    from django.contrib.auth.models import User
 
 
 # Create your models here.
@@ -116,7 +116,7 @@ class BillingInfo(models.Model):
 #        self.tax_number = BillingInfo.clean_tax_number(self.tax_number, self.country)
 
 class UserPlan(models.Model):
-    user = models.OneToOneField(User, verbose_name=_('user'))
+    user = models.OneToOneField(User, verbose_name=_('user'), primary_key=True)
     plan = models.ForeignKey('Plan', verbose_name=_('plan'))
     expire = models.DateField(_('expire'), default=None, blank=True, null=True, db_index=True)
     active = models.BooleanField(_('active'), default=True, db_index=True)

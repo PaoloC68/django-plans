@@ -3,7 +3,7 @@ import logging
 from celery.schedules import crontab
 from celery.task.base import periodic_task
 from django.conf import settings
-from django.contrib.auth.models import User
+from .models import User
 
 logger = logging.getLogger('plans.tasks')
 
