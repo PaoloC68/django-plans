@@ -19,7 +19,7 @@ import logging
 from plans.contrib import send_template_email, get_user_language
 from plans.enum import Enumeration
 from plans.signals import order_completed, account_activated, account_expired, account_change_plan, account_deactivated
-from validators import account_full_validation
+from validators import plan_validation
 from plans.locale.eu.taxation import EUTaxationPolicy
 
 accounts_logger = logging.getLogger('accounts')
@@ -37,11 +37,12 @@ class Plan(OrderedModel):
     name = models.CharField(_('name'), max_length=100)
     description = models.TextField(_('description'), blank=True)
     default = models.BooleanField(default=False, db_index=True)
-    available = models.BooleanField(_('available'), default=False, db_index=True)
+    available = models.BooleanField(_('available'), default=False, db_index=True, help_text=_('Is still available for purchase'))
+    visible = models.BooleanField(_('visible'), default=True, db_index=True, help_text=('Is visible in current offer'))
     created = models.DateTimeField(_('created'), db_index=True)
     customized = models.ForeignKey(User, null=True, blank=True, verbose_name=_('customized'))
     quotas = models.ManyToManyField('Quota', through='PlanQuota', verbose_name=_('quotas'))
-    url = models.CharField(max_length=200, blank=True, help_text=_('Optional link to page with more information (for clickable pricing table headers'))
+    url = models.CharField(max_length=200, blank=True, help_text=_('Optional link to page with more information (for clickable pricing table headers)'))
 
     class Meta:
         ordering = ('order',)
@@ -64,6 +65,12 @@ class Plan(OrderedModel):
 
     def __unicode__(self):
         return u"%s" % (self.name)
+
+    def get_quota_dict(self):
+        quota_dic = {}
+        for plan_quota in PlanQuota.objects.filter(plan=self).select_related('quota'):
+            quota_dic[plan_quota.quota.codename] = plan_quota.value
+        return quota_dic
 
 
 class BillingInfo(models.Model):
@@ -145,6 +152,16 @@ class UserPlan(models.Model):
         else:
             return (self.expire - date.today()).days
 
+    def clean_activation(self):
+        errors = plan_validation(self.user)
+        if not errors['required_to_activate']:
+            plan_validation(self.user, on_activation=True)
+            self.activate()
+        else:
+            self.deactivate()
+        return errors
+
+
     def activate(self):
         if self.active == False:
             self.active = True
@@ -220,11 +237,7 @@ class UserPlan(models.Model):
 
 
         if status:
-            errors = account_full_validation(self.user)
-            if errors:
-                self.deactivate()
-            else:
-                self.activate()
+            self.clean_activation()
 
         return status
 
@@ -254,7 +267,7 @@ class UserPlan(models.Model):
 class Pricing(models.Model):
     name = models.CharField(_('name'), max_length=100)
     period = models.PositiveIntegerField(_('period'), default=30, null=True, blank=True, db_index=True)
-    url = models.CharField(max_length=200, blank=True, help_text=_('Optional link to page with more information (for clickable pricing table headers'))
+    url = models.CharField(max_length=200, blank=True, help_text=_('Optional link to page with more information (for clickable pricing table headers)'))
 
     class Meta:
         ordering = ('period',)
@@ -273,7 +286,7 @@ class Quota(OrderedModel):
     unit = models.CharField(_('unit'), max_length=100, blank=True)
     description = models.TextField(_('description'), blank=True)
     is_boolean = models.BooleanField(_('is boolean'), default=False)
-    url = models.CharField(max_length=200, blank=True, help_text=_('Optional link to page with more information (for clickable pricing table headers'))
+    url = models.CharField(max_length=200, blank=True, help_text=_('Optional link to page with more information (for clickable pricing table headers)'))
 
     class Meta:
         ordering = ('order',)
@@ -532,8 +545,7 @@ class Invoice(models.Model):
                 raise ImproperlyConfigured("INVOICE_COUNTER_RESET can be set only to these values: daily, monthly, yearly.")
             self.number = last_number + 1
 
-
-        if self.full_number is "":
+        if self.full_number == "":
             self.full_number = self.get_full_number()
         super(Invoice, self).clean()
 
